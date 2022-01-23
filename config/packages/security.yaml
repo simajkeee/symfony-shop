@@ -11,6 +11,20 @@ security:
                 class: App\Entity\User
                 property: email
     firewalls:
+        secured_admin_section:
+            pattern: ^/admin
+            anonymous: true
+            lazy: true
+            provider: app_user_provider
+            guard:
+                authenticators:
+                    - App\Security\Admin\AppAuthenticator
+            remember_me:
+                secret: '%kernel.secret%'
+                lifetime: 604800
+            logout:
+                path: admin_logout
+                target: homepage
         dev:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
