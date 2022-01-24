@@ -2,17 +2,37 @@
 
 namespace App\Command;
 
+use App\Entity\User;
+use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bundle\MakerBundle\Exception\RuntimeCommandException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Security\Core\Encoder\UserPasswordEncoderInterface;
 use Symfony\Component\Stopwatch\Stopwatch;
 
 class AddUserCommand extends Command
 {
     protected static $defaultName = 'app:add-user';
     protected static $defaultDescription = 'Add user command';
+    /**
+     * @var ManagerRegistry
+     */
+    private $registry;
+    /**
+     * @var UserPasswordEncoderInterface
+     */
+    private $encoder;
+
+    public function __construct(ManagerRegistry $registry, UserPasswordEncoderInterface $encoder, string $name = null)
+    {
+        parent::__construct($name);
+        $this->registry = $registry;
+        $this->encoder = $encoder;
+    }
 
     protected function configure(): void
     {
@@ -20,7 +40,7 @@ class AddUserCommand extends Command
             ->setDescription(self::$defaultDescription)
             ->addOption('email', 'm', InputOption::VALUE_REQUIRED, 'User email')
             ->addOption('password', 'p', InputOption::VALUE_REQUIRED, 'User password')
-            ->addOption('isAdmin', 'a', InputOption::VALUE_OPTIONAL, 'User is admin', '0')
+            ->addOption('isAdmin', 'a', InputOption::VALUE_OPTIONAL, 'User is admin')
         ;
     }
 
@@ -42,7 +62,20 @@ class AddUserCommand extends Command
             $pwd = $io->askHidden('Enter user password');
         }
 
-        $successMsg = sprintf("User with id: %d and email: %s has been successfully created", 123, $email);
+        if (!$isAdmin) {
+            $isAdmin = $io->ask('Is User admin? 0 or 1');
+            $isAdmin = boolval($isAdmin);
+        }
+
+        try {
+            $user = $this->createUser($email, $pwd, $isAdmin);
+        } catch (RuntimeCommandException $e) {
+            $io->error($e->getMessage());
+
+            return Command::FAILURE;
+        }
+
+        $successMsg = sprintf("User with id: %d and email: %s has been successfully created", $user->getId(), $email);
         $io->success($successMsg);
         $event = $stopwatch->stop('add-user-command');
         $eventMsg = sprintf(
@@ -54,5 +87,25 @@ class AddUserCommand extends Command
         $io->info($eventMsg);
 
         return Command::SUCCESS;
+    }
+
+    private function createUser(string $email, string $pwd, bool $isAdmin): User
+    {
+        $userRepository = $this->registry->getRepository(User::class);
+        $entityManager = $this->registry->getManager();
+        $user = $userRepository->findOneBy(['email' => $email]);
+        if ($user) {
+            throw new RuntimeCommandException(sprintf("User with email %s already exists.", $email));
+        }
+        $user = new User();
+        $user->setEmail($email);
+        $user->setRoles([$isAdmin ? "ROLE_ADMIN" : "ROLE_USER"]);
+        $user->setIsVerified(true);
+        $encodedPassword = $this->encoder->encodePassword($user, $pwd);
+        $user->setPassword($encodedPassword);
+        $entityManager->persist($user);
+        $entityManager->flush();
+
+        return $user;
     }
 }
