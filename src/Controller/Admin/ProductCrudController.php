@@ -3,7 +3,9 @@
 namespace App\Controller\Admin;
 
 use App\Entity\Product;
+use App\Form\ProductType;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 
@@ -28,8 +30,20 @@ class ProductCrudController extends AbstractController
      * @Route("/edit/{id}", name="edit")
      * @Route("/add", name="add")
      */
-    public function add(int $id = null): Response
+    public function add(Request $request, Product $product = null): Response
     {
-        return new Response('add/edit product page');
+        $form = $this->createForm(ProductType::class, $product);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            $entityManager = $this->getDoctrine()->getManager();
+            $entityManager->persist($product);
+            $entityManager->flush();
+            $this->redirectToRoute('admin_product_edit', ['id' => $product->getId()]);
+        }
+        return $this->render('admin/product/edit.html.twig', [
+            'form' => $form->createView(),
+            'product' => $product,
+        ]);
     }
 }
